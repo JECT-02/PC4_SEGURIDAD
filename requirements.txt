@@ -1,0 +1,4 @@
+# Python dependencies for all laboratories
+Flask==2.2.5
+requests
+hashpumpy
