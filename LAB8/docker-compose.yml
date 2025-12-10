@@ -1,0 +1,21 @@
+version: "3.8"
+services:
+  vulnserver:
+    build: ./server
+    ports:
+      - "5000:5000"
+    networks:
+      - labnet
+  
+  attacker:
+    build: ./attacker
+    depends_on:
+      - vulnserver
+    networks:
+      - labnet
+    stdin_open: true
+    tty: true
+
+networks:
+  labnet:
+    driver: bridge
