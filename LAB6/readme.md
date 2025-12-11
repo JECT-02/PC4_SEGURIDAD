@@ -1,25 +1,130 @@
-# LABORATORIO 6: Ataque a Tokens JSON
+# LABORATORIO 6
 
-**Escenario:** API que firma JSONs con esquema inseguro.
-
----
-
-## 1. Preparación (Víctima)
-Token original JSON: `{"user":"juan","role":"user"}`
-**Resumen para informe:** El servidor emite un token JSON legítimo protegiendo los campos con un hash SHA-256 simple. El usuario tiene rol limitado.
-
-## 2. El Ataque
-El atacante quiere inyectar `,"role":"admin"` al JSON.
-```bash
-hashpump -s <mac> -d '<json_original>' -a ',"role":"admin"' -k 28
+## 1. Escenario real
+Un API antiguo devuelve tokens del tipo:
+```json
+{
+"user": "juan",
+"role": "user",
+"expires": 1738000000
+}
 ```
-**Resumen para informe:** Explotamos la firma insegura. Aunque JSON es un formato estructurado, el hash lo trata como bytes crudos. Hashpump nos permite agregar bytes al final manteniendo la validez de la firma.
+El token enviado al cliente es:
+`token = BASE64( payload_json ) . SHA256( clave || payload_json )`
 
-## 3. Token Falsificado
-El nuevo payload es: `{"user":"juan"...} <PADDING> ,"role":"admin"`
-**Resumen para informe:** El resultado es un JSON "malformado" debido al padding binario en el medio, pero matemáticamente válido para la firma criptográfica.
+Un diseño inseguro, porque SHA256(clave || msg) permite Length Extension Attack.
+El atacante no conoce la clave, pero sí:
+1. el payload en base64,
+2. el hash enviado por el servidor.
+Esto basta para explotar el sistema.
 
-## 4. Validación y Consecuencias
-**Resumen para informe:** El servidor acepta la firma. La vulnerabilidad crítica aquí es doble:
-1. **Criptográfica:** La firma admite extensión.
-2. **De Aplicación:** El parser JSON del servidor es "permisivo", ignorando la basura binaria o aceptando claves duplicadas, permitiendo que `role:"admin"` sobrescriba al rol original. Esto demuestra que la seguridad depende tanto de la criptografía robusta (HMAC) como de la validación estricta de datos.
+**Resumen para informe:**
+Analizamos un esquema de tokenización basado en JSON donde la firma se realiza de manera insegura. El token consta del payload codificado en Base64 concatenado con su firma hash.
+
+## 2. Crear clave secreta (solo del servidor)
+```bash
+echo -n "CLAVE_SÚPER_SECRETA_DEL_API" > api.key
+```
+**Resumen para informe:**
+Se definió "CLAVE_SÚPER_SECRETA_DEL_API" como el secreto del servidor.
+
+## 3. Crear payload del token
+```bash
+echo -n '{"user":"juan","role":"user","expires":1738000000}' > payload.json
+```
+**Generar la parte base64:**
+```bash
+base64 payload.json > payload.b64
+cat payload.b64
+```
+**Ejemplo:**
+`eyJ1c2VyIjoianVhbiIsInJvbGUiOiJ1c2VyIiwiZXhwaXJlcyI6MTczODAwMDAwMH0=`
+
+**Resumen para informe:**
+Se creó el payload JSON para un usuario estándar y se codificó en Base64, simulando el primer componente del token.
+
+## 4. El servidor genera el hash inseguro (MAC)
+```bash
+mac=$(printf "CLAVE_SÚPER_SECRETA_DEL_API$(cat payload.json)" | openssl dgst -sha256 | awk '{print $2}')
+echo $mac
+```
+**Ejemplo:**
+`7df0faeec84a4f71c76db548a3d909cb0f78c03199e15ef4b88d132fb9258769`
+
+El token entregado al usuario es:
+`TOKEN = payload.b64 . mac`
+Que el atacante puede interceptar.
+
+**Resumen para informe:**
+El servidor firmó el payload JSON inseguramente. El token completo (Base64 + Hash) es entregado al cliente, quedando expuesto a intercepción.
+
+## 5. El atacante quiere escalar privilegios
+**Modificación maliciosa deseada:**
+`,"role":"admin"`
+
+Pero el atacante no conoce la clave secreta del API.
+Sin embargo, esta API insegura sí es vulnerable.
+
+## 6. Ejecutar el ataque de extensión
+Usamos hashpump:
+```bash
+hashpump \
+-s 7df0faeec84a4f71c76db548a3d909cb0f78c03199e15ef4b88d132fb9258769 \
+-d '{"user":"juan","role":"user","expires":1738000000}' \
+-a ',"role":"admin"' \
+-k 28
+```
+
+**Explicación:**
+● -s → hash original
+● -d → JSON conocido
+● -a → datos que desea agregar
+● -k → longitud estimada de clave
+
+**Salida típica:**
+New hash:
+`c41fa603b49ea682e62974b1389fb10b10d9433741c59b03b26dfd5a89778b10`
+New data:
+`{"user":"juan","role":"user","expires":1738000000}%80...padding...,"role":"admin"`
+
+Este output contiene:
+● nuevo MAC válido,
+● payload extendido,
+● padding interno SHA-256,
+● mensaje malicioso agregado
+
+**Resumen para informe:**
+Se ejecutó hashpump para inyectar una propiedad JSON adicional. A pesar de que esto introduce basura binaria en la cadena JSON, la firma generada es criptográficamente válida para la nueva estructura extendida.
+
+## 7. Atacante reconstruye el nuevo token
+1. **Codifica el nuevo payload en base64:**
+   ```bash
+   echo -n '<nuevo_payload>' | base64 > payload_mod.b64
+   ```
+2. **Une los campos:**
+   `TOKEN_MODIFICADO = payload_mod.b64 . nuevo_hash`
+
+Este token es totalmente válido para el servidor.
+
+**Resumen para informe:**
+Se ensambló el token fraudulento combinando el nuevo payload (ahora incluyendo el rol admin y el padding) en Base64 con la nueva firma generada.
+
+## 8. Verificación del servidor (simulada)
+El servidor hace:
+`SHA256( CLAVE_SÚPER_SECRETA_DEL_API || payload_modificado )`
+
+y obtiene:
+`c41fa603b49ea682e62974b1389fb10b10d9433741c59b03b26dfd5a89778b10`
+
+El mismo valor producido por el atacante.
+**Resultado:** el servidor acepta el token modificado.
+
+## 9. ¿Qué logró el atacante?
+● Cambió "role": "user" → "role": "admin"
+● No tocó la parte original del JSON
+● No conocía la clave secreta
+● No rompió SHA-256
+● Aprovechó la mala construcción del token
+
+**Resumen para informe (Conclusión):**
+El ataque tuvo éxito explotando la permisividad de los parsers JSON ante datos extraños y la debilidad criptográfica del esquema de firma. Se logró escalar privilegios sin comprometer la clave secreta.

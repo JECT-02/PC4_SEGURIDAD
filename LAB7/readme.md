@@ -1,20 +1,89 @@
-# LABORATORIO 7: API Vulnerable End-to-End en Python
+# LABORATORIO 7 API vulnerable en Python (end-to-end, local)
 
-Laboratorio completo con API real en Flask.
+**Objetivo:** desplegar una API simple que genera tokens inseguros `token = base64(data + "." + sha256(key || data))`, capturar un token, forjar un token extendido con hashpump y demostrar acceso no autorizado.
+
+## Resumen del flujo
+1. API (Flask) crea tokens inseguros y valida tokens comparando sha256(key || data).
+2. Cliente obtiene token normal (role=user).
+3. Atacante usa hashpump para producir `data' = data || padding || extension` y nuevo MAC.
+4. Atacante llama la API con token forjado (role=admin) y la API lo acepta.
+
+## Requisitos
+● Python 3.8+
+● pip
+● hashpump (instalable en Debian/Ubuntu con `sudo apt install hashpump` o `pip install hashpumpy`)
+● curl (opcional)
+
+**Ejecuta todo en una VM/entorno aislado.**
+
+## Estructura de archivos (directorio lab-python/)
+● `server.py` — API vulnerable (Flask)
+● `client_get_token.sh` — script para obtener token legítimo
+● `attacker_forge.sh` — script que usa hashpump para forjar token
+● `requirements.txt`
+
+*(Nota: Los archivos deben ser creados con el contenido provisto en los bloques de código)*.
 
 ---
 
-## 2. Iniciar el Servidor
-`python server.py`
-**Resumen para informe:** Levantamos una API real programada en Python. Esta API implementa intencionalmente la verificación de firma insegura `hashlib.sha256(SECRET + data)` para fines educativos.
+## Pasos para ejecutar (en el directorio lab-python/)
 
-## 3. Obtener Token Legítimo
-`./client_get_token.sh`
-**Resumen para informe:** Actuamos como un usuario normal solicitando acceso. La API nos entrega un token válido con privilegios estándar. Guardamos este token para analizarlo.
+### 1. Crear entorno y deps:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+sudo apt install -y hashpump jq # hashpump for attack, jq for pretty JSON (Ubuntu/Debian)
+```
 
-## 4. Ejecutar el Ataque
-`./attacker_forge.sh "<TOKEN>" 21`
-**Resumen para informe:** El script automatizado realiza el proceso completo: decodifica el token, extrae la firma, usa hashpump para generar una extensión con `role=admin`, reconstruye el token en Base64 y lo envía de vuelta a la API.
+**Resumen para informe:**
+Se preparó el entorno de ejecución aislando las dependencias de Python e instalando las herramientas de sistema necesarias (`hashpump`, `jq`) para realizar y validar el ataque.
 
-## 5. Resultado
-**Resumen para informe:** La API responde con `FLAG{ADMIN_ACCESS_GRANTED}`. Esto confirma que el ataque fue exitoso en un entorno real. Logramos engañar al servidor haciéndole creer que él mismo generó el token de administrador, cuando en realidad fue forjado por nosotros explotando la debilidad matemática del hash.
+### 2. Iniciar servidor:
+```bash
+python server.py
+```
+**Servidor escucha en http://0.0.0.0:5000.**
+
+**Resumen para informe:**
+Se desplegó la API vulnerable. El código del servidor implementa deliberadamente una verificación de firma insegura para fines demostrativos.
+
+### 3. Obtener token legítimo:
+```bash
+./client_get_token.sh
+```
+**Salida ejemplo:**
+```json
+{
+"token": "dXNlcl9pZD0xNSZyb2xlPXVzZXIuNmNjYWIwMzBj...",
+"data": "user_id=15&role=user"
+}
+```
+
+**Resumen para informe:**
+Se simuló la interacción de un usuario legítimo obteniendo sus credenciales. La API entregó un token válido con privilegios restringidos (`role=user`).
+
+### 4. Ejecutar el ataque (intenta KEYLEN = 16..24)
+```bash
+TOKEN=$(curl -s http://127.0.0.1:5000/get_token | jq -r .token)
+./attacker_forge.sh "$TOKEN" 20
+```
+*(Nota: Prueba con 20, 21, etc hasta que funcione)*.
+
+**Salida esperada (cuando keylen correcto o suficientemente close):**
+● `attacker_forge.sh` mostrará New MAC, the forged token, y la respuesta del endpoint `/resource` que debe devolver el `FLAG{ADMIN_ACCESS_GRANTED}` si el token fue aceptado.
+
+**Si no funciona con una keylen, prueba otras longitudes (10..32) hasta que hashpump genera token que server acepta.**
+
+**Resumen para informe:**
+Se ejecutó el script de explotación automatizado. Este script descompone el token legítimo y utiliza la vulnerabilidad de extensión para inyectar `role=admin`. Al enviar el token falsificado de vuelta a la API, esta respondió otorgando acceso administrativo, confirmando el éxito del ataque.
+
+---
+
+## Observaciones
+● El servidor no usa HMAC; por eso el atacante puede continuar desde estado interno.
+● hashpump reconstruye el padding y el estado interno dados hash y message.
+● En producción, un servidor del mundo real expuesto podría permitir elevación de privilegios si hace uso de este esquema.
+
+## Mitigación inmediata:
+usar HMAC-SHA256 con clave secreta (no sha256(key||data)), o migrar a JWT firmados correctamente (HS256/RS256) o a sistemas con firma asimétrica.

@@ -1,53 +1,80 @@
 # LABORATORIO 2
 **Demostración práctica del uso de HMAC (Hash-based Message Authentication Code)**
 
-**Objetivo:**
-● Mostrar cómo HMAC combina hash + clave secreta  
-● Demostrar autenticación de mensajes  
-● Mostrar que sin la clave correcta, la verificación falla  
+## Objetivo
+● Mostrar cómo HMAC combina hash + clave secreta
+● Demostrar autenticación de mensajes
+● Mostrar que sin la clave correcta, la verificación falla
+● Comparar hash simple vs HMAC
+
+**Usaremos SHA-256 como algoritmo base.**
 
 ---
 
 ## 1. Crear un mensaje real
-Ejecuta el siguiente comando para simular una transacción sensible:
 ```bash
 echo "Transaccion=100;Cuenta=987654;" > mensaje.txt
 ```
-**Resumen para informe:** Definimos una transacción crítica. A diferencia del lab anterior, ahora nos preocupa no solo la integridad, sino también saber quién generó este mensaje.
+**Resumen para informe:**
+Se creó un archivo simulando una transacción financiera sensible, cuyo contenido requiere garantías tanto de integridad como de autenticidad.
 
 ## 2. Crear una clave secreta compartida
-Esta clave debe ser conocida solo por las partes legítimas:
 ```bash
 echo "ClaveSecretaSuperSegura123" > clave.key
 ```
-**Resumen para informe:** Establecemos un secreto compartido. Este archivo simula la clave criptográfica que solo el emisor y el receptor legítimos poseen, base de la autenticación simétrica.
+**Esta clave debe ser conocida solo por las partes legítimas.**
+
+**Resumen para informe:**
+Se generó un archivo conteniendo una clave secreta ("clave.key"). Este secreto compartido es el componente fundamental que permitirá validar que un mensaje proviene de una fuente confiable.
 
 ## 3. Generar el HMAC real
-Calculamos el HMAC combinando el mensaje y la clave:
 ```bash
 openssl dgst -sha256 -hmac "$(cat clave.key)" mensaje.txt
 ```
-**Resumen para informe:** Generamos un código de autenticación (HMAC). Este hash no depende solo del contenido, sino también de la clave secreta. Solo quien tenga la clave puede producir este valor específico.
+
+**Salida ejemplo:**
+```
+HMAC-SHA256(mensaje.txt)=
+b79c68f6292f5dd1d2ff4f9cf19a0ef48d98ef63bd39e4df68cb02dbb8c229a1
+```
+
+**Resumen para informe:**
+Se calculó el Código de Autenticación de Mensaje (HMAC) utilizando SHA-256 y la clave secreta. El resultado es una firma única ligada criptográficamente tanto al contenido del mensaje como a la clave.
 
 ## 4. Modificar un bit del mensaje y regenerar HMAC
-Modificamos el archivo y recalculamos:
 ```bash
 echo " " >> mensaje.txt
 openssl dgst -sha256 -hmac "$(cat clave.key)" mensaje.txt
 ```
-**Resumen para informe:** Al igual que en el hash simple, el HMAC cambia totalmente ante cualquier modificación del mensaje, garantizando la integridad de los datos.
+**Compare ambos HMAC: serán completamente diferentes, igual que en el hash.**
+
+**Resumen para informe:**
+Se modificó el mensaje original y se recalculó el HMAC. El cambio radical en la salida confirma que HMAC preserva la propiedad de integridad: cualquier alteración en los datos invalida la firma anterior.
 
 ## 5. Demostrar autenticación: usar clave incorrecta
-Intentamos verificar con una clave incorrecta:
 ```bash
 openssl dgst -sha256 -hmac "ClaveIncorrecta" mensaje.txt
 ```
-**Resumen para informe:** Intentar generar el HMAC con una clave falsa produce un resultado erróneo. Esto demuestra la autenticidad: es matemáticamente imposible falsificar la firma sin conocer la clave secreta exacta.
+
+**Salida completamente distinta:**
+```
+HMAC-SHA256(mensaje.txt)=
+3bb9a89378fa21934974338b4e48c74a6273494b9bfa81dc3698c81d95c651e1
+```
+
+**Interpretación:**
+● A diferencia del hash simple, sin la clave secreta no puedes generar el HMAC correcto, aunque conozcas el mensaje completo.
+● Esto demuestra la propiedad de autenticación.
+
+**Resumen para informe:**
+Se intentó generar la firma del mensaje usando una clave errónea. El resultado no coincide con la firma legítima, demostrando que es computacionalmente inviable falsificar la autenticidad del mensaje sin poseer la clave secreta correcta.
 
 ## 6. Simular verificación del receptor
-**Escenario:** Cliente envía mensaje y HMAC. Servidor recibe y recalcula.
+**Supongamos:**
+● Cliente envía → mensaje.txt + HMAC
+● Servidor recalcula HMAC con la misma clave y compara
 
-**Generar HMAC del Cliente:**
+**Generar HMAC del cliente:**
 ```bash
 openssl dgst -sha256 -hmac "$(cat clave.key)" mensaje.txt > hmac_cliente.txt
 ```
@@ -62,4 +89,9 @@ openssl dgst -sha256 -hmac "$(cat clave.key)" mensaje.txt > hmac_servidor.txt
 diff hmac_cliente.txt hmac_servidor.txt
 ```
 
-**Resumen para informe:** El servidor valida el mensaje recalculando el HMAC con su propia copia de la clave. Al coincidir los valores, se confirman dos cosas: el mensaje no fue alterado (integridad) y fue generado por alguien que tenía la clave (autenticidad).
+**Resultado:**
+● Si no hay diferencias → autenticidad e integridad confirmadas.
+● Si hay diferencias → mensaje manipulado o clave incorrecta.
+
+**Resumen para informe:**
+Se simuló el proceso de verificación donde el receptor recalcula el HMAC usando su copia de la clave secreta. La coincidencia exacta entre el HMAC recibido y el calculado localmente confirma de manera irrefutable la autenticidad del emisor y la integridad del mensaje.
