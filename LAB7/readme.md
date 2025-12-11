@@ -28,12 +28,20 @@
 
 ## Pasos para ejecutar (en el directorio lab-python/)
 
+### 0. Configurar permisos (CRÍTICO)
+Antes de empezar, es obligatorio dar permisos de ejecución a los scripts:
+```bash
+chmod +x *.sh
+# o específicamente:
+chmod +x attacker_forge.sh client_get_token.sh
+```
+
 ### 1. Crear entorno y deps:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-sudo apt install -y hashpump jq # hashpump for attack, jq for pretty JSON (Ubuntu/Debian)
+sudo apt install -y hashpump jq
 ```
 
 **Resumen para informe:**
@@ -66,17 +74,24 @@ Se simuló la interacción de un usuario legítimo obteniendo sus credenciales. 
 ### 4. Ejecutar el ataque (intenta KEYLEN = 16..24)
 ```bash
 TOKEN=$(curl -s http://127.0.0.1:5000/get_token | jq -r .token)
-./attacker_forge.sh "$TOKEN" 20
+echo "Token Capturado: $TOKEN"
 ```
-*(Nota: Prueba con 20, 21, etc hasta que funcione)*.
 
-**Salida esperada (cuando keylen correcto o suficientemente close):**
-● `attacker_forge.sh` mostrará New MAC, the forged token, y la respuesta del endpoint `/resource` que debe devolver el `FLAG{ADMIN_ACCESS_GRANTED}` si el token fue aceptado.
+### Paso 3: Ejecutar el ataque
+Usamos el script automatizado.
+**Nota:** La clave del servidor tiene 21 caracteres (`TEST_SECRET_KEY_12345`), por lo que debemos indicarlo en el argumento de longitud.
 
-**Si no funciona con una keylen, prueba otras longitudes (10..32) hasta que hashpump genera token que server acepta.**
+```bash
+# Uso: ./attacker_forge.sh <token> <longitud_clave>
+./attacker_forge.sh "$TOKEN" 21
+```
 
-**Resumen para informe:**
-Se ejecutó el script de explotación automatizado. Este script descompone el token legítimo y utiliza la vulnerabilidad de extensión para inyectar `role=admin`. Al enviar el token falsificado de vuelta a la API, esta respondió otorgando acceso administrativo, confirmando el éxito del ataque.
+El script automáticamente:
+1. Decodifica el token.
+2. Ejecuta `hashpump` para generar la extensión.
+3. Reconstruye el token binario correctamente.
+4. Lo envía al servidor para verificar si ganamos acceso admin.
+
 
 ---
 

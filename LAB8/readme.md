@@ -27,10 +27,13 @@
 ## Construir y ejecutar
 
 ### 1. Desde el directorio lab-docker/:
+### 1. Desde el directorio lab-docker/:
 ```bash
-docker compose build
-docker compose up
+# NOTA: Si obtienes "permission denied", usa sudo
+sudo docker compose build
+sudo docker compose up
 ```
+*(Alternativamente, si tu usuario ya está en el grupo docker y reiniciaste sesión, no necesitas sudo).*
 
 **Resumen para informe:**
 Se desplegó la infraestructura completa del laboratorio utilizando contenedores Docker, garantizando un entorno estéril y reproducible idéntico para el servidor víctima y la máquina atacante.
